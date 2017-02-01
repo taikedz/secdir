@@ -18,39 +18,329 @@
 # IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
 # WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
-set -u
+### secdir Usage:help
+#
+#Manage, Mount and Unmount EncFS encrypted directory
+#
+#$(basename $0) {list|init}
+#$(basename $0) {mount|unmount|open|close} DIRNAME [LINK ...]
+#
+#Uses a .enc directory in the current working directory to store the encrypted files.
+#
+#The secure directory is mounted in the current working directory.
+#
+#OPTIONS
+#
+#list
+#	list secure directories configured at current working directory
+#
+#init
+#	set current working directory up as a location for secure directories
+#
+#mount
+#open
+#	mount the secure directory. If it does not exist, offers to create it.
+#
+#unmount
+#close
+#	unmount a mounted secure directory.
+###/doc
 
-function printhelp {
-cat <<EOHELP
-Manage, Mount and Unmount EncFS encrypted directory
+#!/bin/bash
 
-$(basename $0) {list|init}
-$(basename $0) {mount|unmount|open|close} DIRNAME [LINK ...]
+#!/bin/bash
 
-Uses a .enc directory in the current working directory to store the encrypted files.
+export CDEF="[0m"
+export CRED="[31m"
+export CGRN="[32m"
+export CYEL="[33m"
+export CBLU="[34m"
+export CBRED="[1;31m"
+export CBGRN="[1;32m"
+export CBYEL="[1;33m"
+export CBBLU="[1;34m"
 
-The secure directory is mounted in the current working directory.
+MODE_DEBUG=no
 
-OPTIONS
-
-list
-	list secure directories configured at current working directory
-
-init
-	set current working directory up as a location for secure directories
-
-mount
-open
-	mount the secure directory. If it does not exist, offers to create it.
-
-unmount
-close
-	unmount a mounted secure directory.
-
-EOHELP
+### debuge MESSAGE Usage:bbuild
+# print a blue debug message to stderr
+# only prints if MODE_DEBUG is set to "yes"
+###/doc
+function debuge {
+	if [[ "$MODE_DEBUG" = yes ]]; then
+		echo -e "${CBBLU}DEBUG:$CBLU$*$CDEF" 1>&2
+	fi
 }
 
-if [[ "$*" =~ --help ]]; then printhelp; fi
+### infoe MESSAGE Usage:bbuild
+# print a green informational message to stderr
+###/doc
+function infoe {
+	echo -e "$CGRN$*$CDEF" 1>&2
+}
+
+### warne MESSAGE Usage:bbuild
+# print a yellow warning message to stderr
+###/doc
+function warne {
+	echo -e "${CBYEL}WARN:$CYEL $*$CDEF" 1>&2
+}
+
+### faile MESSAGE CODE Usage:bbuild
+# print a red failure message to stderr and exit with CODE
+# CODE must be a number
+# if no code is specified, error code 127 is used
+###/doc
+function faile {
+	local MSG=
+	local ARG=
+	local ERCODE=127
+	local numpat='^[0-9]+$'
+	while [[ -n "$*" ]]; do
+		ARG=$1 ; shift
+		if [[ -z "$*" ]] && [[ "$ARG" =~ $numpat ]]; then
+			ERCODE=$ARG
+		else
+			MSG="$MSG $ARG"
+		fi
+	done
+	echo "${CBRED}ERROR FAIL:$CRED$MSG$CDEF" 1>&2
+	exit "$ERCODE"
+}
+
+function dumpe {
+	echo -n "[1;35m$*" 1>&2
+	echo -n "[0;35m" 1>&2
+	cat - 1>&2
+	echo -n "[0m" 1>&2
+}
+
+if [[ "$*" =~ --debug ]]; then
+	MODE_DEBUG=yes
+fi
+#!/bin/bash
+
+### AskUser Usage:bbuild
+# Present the user with questions on stdout
+###/doc
+
+
+yespat='^(yes|YES|y|Y)$'
+numpat='^[0-9]+$'
+rangepat='[0-9]+,[0-9]+'
+blankpat='^ *$'
+
+### uconfirm Usage:bbuild
+# Ask the user to confirm a closed question. Defaults to no
+#
+# returns 0 on successfully match 'y' or 'yes'
+# returns 1 otherwise
+###/doc
+function uconfirm {
+	read -p "$* [y/N] > " 1>&2
+	if [[ "$REPLY" =~ $yespat ]]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+### uask Usage:bbuild
+# Ask the user to provide some text
+#
+# returns the entered text
+###
+function uask {
+	read -p "$* : " 1>&2
+	echo $REPLY
+}
+
+### uchoose_multi Usage:bbuild
+# Allows the user to choose from multiple choices
+#
+# uchose_multi MESG CHOICESTRING
+#
+#
+# MESG is a single string token that will be displayed as prompt
+#
+# CHOICESTRING is a comma-separated, or newline separated, or "\\n"-separated token string
+#
+# Equivalent strings include:
+#
+# * `"a\\nb\\nc"` - quoted and explicit newline escapes
+# * `"a,b,c"` - quoted and separated with commas
+# * `a , b , c` - not quoted, separated by commas
+# * (and `a`, `b` and `c` on their own lines)
+#
+# User input:
+#
+# User can choose by selecting
+#
+# * a single item by number
+# * a range of numbers (4,7 for range 4 to 7)
+# * or a string that matches the pattern
+#
+# All option lines that match will be returned, one per line
+#
+# If the user selects nothing, then function returns 1 and an empty stdout
+###/doc
+function uchoose_multi {
+	local mesg=$1; shift
+	local choices=$(echo "$*"|sed -r 's/ *, */\n/g')
+	debuge "CHOICES: $choices"
+
+	infoe "$mesg:" 
+	echo -e "$choices"|egrep '^' -n| sed 's/:/: /' 1>&2
+	
+	local sel=$(uask "Choice")
+	if [[ "$sel" =~ $blankpat ]]; then
+		return 1
+	elif [[ "$sel" =~ $numpat ]] || [[ "$sel" =~ $rangepat ]]; then
+		debuge "Number choice [$sel]"
+		echo -e "$choices" | sed -n "$sel p"
+	else
+		debuge "Pattern choice [$sel]"
+		echo -e "$choices"  |egrep "$(echo "$sel"|tr " " '|')"
+	fi
+	return 0
+}
+
+### uchoose Usage:bbuild
+# Ask the user to choose an item
+#
+# Like uchoose_multi, but will loop if the user selects more than one item
+#
+# If the provides no entry, returns 0
+#
+# If the user chooses one item, that item is echoed to stdout
+###/doc
+function uchoose {
+	local mesg=$1; shift
+	while true; do
+		local thechoice="$(uchoose_multi "$mesg" "$*")"
+		local lines=$(echo "$thechoice" | wc -l)
+		if [[ $lines = 1 ]]; then
+			echo "$thechoice"
+			return 0
+		else
+			warne "Too many results"
+		fi
+	done
+}
+
+#!/bin/bash
+
+### printhelp Usage:bbuild
+# Write your help as documentation comments in your script
+#
+# If you need to output the help from a running script, call the
+# `printhelp` function and it will print the help documentation
+# in the current script to stdout
+#
+# A help comment looks like this:
+#
+#	### <title> Usage:help
+#	#
+#	# <some content>
+#	#
+#	# end with "###/doc" on its own line (whitespaces before
+#	# and after are OK)
+#	#
+#	###/doc
+#
+###/doc
+
+CHAR='#'
+
+function printhelp {
+	USAGESTRING=help
+	TARGETFILE=$0
+	if [[ -n "$*" ]]; then USAGESTRING="$1" ; shift; fi
+	if [[ -n "$*" ]]; then TARGETFILE="$1" ; shift; fi
+
+        echo -e "\n$(basename "$TARGETFILE")\n===\n"
+        local SECSTART='^\s*'"$CHAR$CHAR$CHAR"'\s+(.+?)\s+Usage:'"$USAGESTRING"'\s*$'
+        local SECEND='^\s*'"$CHAR$CHAR$CHAR"'\s*/doc\s*$'
+        local insec="$(mktemp --tmpdir)"; rm "$insec"
+        cat "$TARGETFILE" | while read secline; do
+                if [[ "$secline" =~ $SECSTART ]]; then
+                        touch "$insec"
+                        echo -e "${BASH_REMATCH[1]}\n---\n"
+                elif [[ -f $insec ]]; then
+                        if [[ "$secline" =~ $SECEND ]]; then
+                                rm "$insec"
+                        else
+				echo "$secline" | sed -r "s/^\s*$CHAR//g"
+                        fi
+                fi
+        done
+        if [[ -f "$insec" ]]; then
+                echo "WARNING: Non-terminated help block." 1>&2
+		rm "$insec"
+        fi
+	echo ""
+}
+
+### automatic help Usage:bbuild
+#
+# automatically call help if "--help" is detected in arguments
+#
+###/doc
+if [[ "$@" =~ --help ]]; then
+	printhelp
+	exit 0
+fi
+#!/bin/bash
+
+### abspath Usage:bbuild
+# Returns the absolute path of a file/directory
+#
+# Exposes two functions
+#
+#     abspath
+#     abspath_collapse
+#
+# Do not use the python-based 'abspath' for intensitve resolution;
+# instead, use native 'abspath_collapse' which is at least 170 times
+# more efficient, at the cost of perhaps being potentially
+# dumber (simply collapses '/./' and '/../').
+# 
+# Neither utility expands softlinks.
+#
+# If python is not found, abspath uses abspath_collapse internally.
+##/doc
+
+function abspath {
+	local newvar=${1//"'"/"\\'"}
+	(
+		set +eu
+		if which python 2>&1 >/dev/null; then
+			python  -c "import os ; print os.path.abspath('$newvar')"
+		elif which python3 2>&1 >/dev/null ; then
+			python3 -c "import os ; print(os.path.abspath('$newvar') )"
+		else
+			abspath_collapse "$newvar"
+		fi
+	)
+}
+
+# More efficient by a factor of at least 170:1
+# compared to spinning up a python process every time
+function abspath_collapse {
+	local workpath="$1"
+	if [[ "${workpath:0:1}" != "/" ]]; then workpath="$PWD/$workpath"; fi
+	for x in {1..50}; do # set a limit on how many iterations - only very stupid paths will get us here.
+		if [[ "$workpath" =~ '/../' ]] || [[ "$workpath" =~ '/./' ]]; then
+			workpath="$(echo "$workpath"|sed -r -e 's#/./#/#g' -e 's#([^/]+)/../#\1/#g' -e 's#/.$##' -e 's#([^/]+)/..$#\1#' )"
+		else
+			echo "$workpath"
+			return 0
+		fi
+	done
+	return 1 # hopefully we never get here
+}
+
+set -u
 
 function linkall {
 	while [[ -n "$@" ]]; do
@@ -68,20 +358,13 @@ function delinkall {
 	[[ $(wc -l "$PWD/.enc/${CUST}.links") -lt 1 ]] && rm "$PWD/.enc/${CUST}.links"
 }
 
-function abspath {
-	python -c "import os ; print os.path.abspath('$1')"
-}
-
 if [[ ! -f /usr/bin/encfs ]]; then
 	encfs # try calling it anyway; some systems may hint which package needs installing
-	echo ""
-	echo "Please install package 'encfs' "
-	exit 0
+	faile "Please install package 'encfs' "
 fi
 
 if [[ -z "$@" ]]; then
-	echo "No arguments given."
-	exit 1
+	faile "No arguments given."
 fi
 
 ACTION="$1" ; shift
@@ -89,24 +372,22 @@ ACTION="$1" ; shift
 case "$ACTION" in
 list)
 	for x in $(ls .enc); do
-		echo "$x"
+		infoe "$x"
 	done
 	exit 0
 	;;
 init)
-	mkdir -p "$PWD/.enc" && echo "secdir has been set up for use in $PWD"
+	mkdir -p "$PWD/.enc" && infoe "secdir has been set up for use in $PWD"
 	;;
 esac
 
 if [[ ! -d "$PWD/.enc" ]]; then
-	echo "Current directory $PWD is not a valid secdir location."
-	exit 1
+	faile "Current directory $PWD is not a valid secdir location."
 fi
 
 
 if [[ -z "$@" ]]; then
-	echo "You must specify the name of a secure directory to load"
-	exit
+	faile "You must specify the name of a secure directory to load"
 fi
 
 CUST="$1" ; shift
@@ -115,23 +396,20 @@ OPEDIR="$PWD/$CUST"
 
 case "$ACTION" in
 	mount|open)
-		echo "Opening $CUST"
+		infoe "Opening $CUST"
 		mkdir -p "$OPEDIR"
 		encfs "$SECDIR" "$OPEDIR"
 		linkall $*
 		;;
 	unmount|close)
-		echo "Closing $CUST"
+		infoe "Closing $CUST"
 		if delinkall ; then
-			fusermount -u "$OPEDIR"
-			rmdir "$OPEDIR"
+			fusermount -u "$OPEDIR" && rmdir "$OPEDIR"
 		else
-			echo -e "Could not unlink some directories:\n$( cat "$PWD/.enc/${CUST}.links")"
-			exit 3
+			faile 3 "Could not unlink some directories:\n$( cat "$PWD/.enc/${CUST}.links")"
 		fi
 		;;
 	*)
-		echo "Invalid action $ARG. Use 'mount' or 'unmount' followed by the directory name."
-		exit 1
+		faile "Invalid action $ARG. Use 'mount' or 'unmount' followed by the directory name."
 		;;
 esac
