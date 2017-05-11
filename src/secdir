@@ -20,35 +20,36 @@
 
 ### secdir Usage:help
 #
-#Manage, Mount and Unmount EncFS encrypted directory
+# Manage, Mount and Unmount EncFS encrypted directory
 #
-#$(basename $0) {list|init}
-#$(basename $0) {mount|unmount|open|close} DIRNAME [LINK ...]
+# $(basename $0) {list|init}
+# $(basename $0) {mount|unmount|open|close} DIRNAME [LINK ...]
 #
-#Uses a .enc directory in the current working directory to store the encrypted files.
+# Uses a .enc directory in the current working directory to store the encrypted files.
 #
-#The secure directory is mounted in the current working directory.
+# The secure directory is mounted in the current working directory.
 #
-#OPTIONS
+# OPTIONS
 #
-#list
+# list
 #	list secure directories configured at current working directory
 #
-#init
+# init
 #	set current working directory up as a location for secure directories
 #
-#mount
-#open
+# mount
+# open
 #	mount the secure directory. If it does not exist, offers to create it.
 #
-#unmount
-#close
+# unmount
+# close
 #	unmount a mounted secure directory.
+#
 ###/doc
 
-#%include bashout askuser autohelp abspath
+#%include bashout.sh askuser.sh autohelp.sh abspath.sh
 
-set -u
+set -eu
 
 function linkall {
 	while [[ -n "$@" ]]; do
