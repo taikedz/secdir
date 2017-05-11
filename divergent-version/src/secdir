@@ -1,0 +1,171 @@
+#!/bin/bash
+
+# Script to mount / unmount singular secure directories
+
+# Released under BSD license:
+# Copyright (c) 2016 Tai Kedzierski.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms are permitted
+# provided that the above copyright notice and this paragraph are
+# duplicated in all such forms and that any documentation,
+# advertising materials, and other materials related to such
+# distribution and use acknowledge that the software was developed
+# by Tai Kedzierski. The name of Tai Kedzierski
+# may not be used to endorse or promote products derived
+# from this software without specific prior written permission.
+# THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
+# IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+#% bundle README.md
+function printhelp {
+	cat README.md | sed -r 's/^(\s*\*)/\t\1/'
+}
+
+if [[ "$*" =~ --help ]]; then printhelp; exit 0; fi
+
+set -u
+
+#% include bashout abspath configreader askuser
+
+#% bundle files/config
+# #% include files/linkage.sh
+
+if [[ -z "$*" ]]; then
+	infoe "Nothing to do. Try running '$(basename "$0") --help' for more info"
+	exit
+fi
+
+ACTION="$1"; shift
+
+if [[ "$ACTION" = init ]]; then
+	:
+	#% include files/init-enc.sh
+fi
+
+# =======================================
+# Check that the current directory is a secdir directory
+
+if [[ ! -d "$PWD/secdir.enc" ]]; then
+	faile "Current directory $PWD is not a valid secdir location."
+fi
+
+CONFFILE=./secdir.enc/config
+MOUNTFILE="$HOME/.config/secdir/mounts" # make it global so we can close it from anywhere
+
+if [[ "$ACTION" = "list" ]] ; then
+	cd secdir.enc
+	infoe "Configured encryption utility: $(grep -o -P '(?<=utility=).+' "config")"
+	ownfiles='^(crypts|README.md|config)$'
+	for x in *; do
+		if [[ ! "$x" =~ $ownfiles ]]; then
+			echo "$x"
+		fi
+	done
+	exit
+fi
+
+
+#% bundle crypts/encfs.crypt.source
+#% bundle crypts/cryfs.crypt.source
+if [[ ! -d "./secdir.enc/crypts" ]] || [[ "$*" =~ --installcrypts ]]; then
+	mkdir -p "./secdir.enc/crypts"
+	cp crypts/encfs.crypt.source "./secdir.enc/crypts/"
+	cp crypts/cryfs.crypt.source "./secdir.enc/crypts/"
+fi
+
+# =============================
+# load config of mounts file
+
+config_usesection Mount
+if config_isset mountfile; then
+	MOUNTFILE=$(config_readval mountfile)
+fi
+
+# =============================
+# Loading encryption utility
+
+config_usesection Crypt
+if ! config_isset utility; then
+	faile "No encryption utility specified in secdir.enc/config"
+else
+	cryptutil=$(config_readval utility)
+	if [[ -f "./secdir.enc/crypts/$cryptutil.crypt.source" ]]; then
+		source "./secdir.enc/crypts/$cryptutil.crypt.source"
+	else
+		faile "Encryption utility '$cryptutil' not defined"
+	fi
+fi
+
+if ! _check_crypt ; then
+	warne "$(_hoto_crypt)"
+	faile "The selected encryption utility is not installed"
+fi
+
+if [[ -z "$*" ]]; then
+	faile "No arguments given."
+fi
+
+# ====
+# Swallow optional options
+# stops at first non-option-flag
+#% include files/swallow-options.source
+
+
+if [[ ! -f "$MOUNTFILE" ]]; then
+	touch "$MOUNTFILE" || faile "Cannot create $MOUNTFILE"
+fi
+
+# ====
+# Swallow optional options
+# stops at first non-option-flag
+#% include files/swallow-options.source
+
+
+if [[ -z "$*" ]]; then
+	faile "You must specify the name of a secure directory to load"
+fi
+
+# ====================================
+# Get the secured directory
+
+CUST="$1" ; shift
+
+case "$ACTION" in
+	mount|open)
+		#% include files/opendir.sh
+		;;
+
+	unmount|close)
+		mountpointdir=
+		if grep -E "^$CUST:" "$MOUNTFILE" -q; then
+			mountpointdir="$(grep -E "^$CUST:" "$MOUNTFILE"|cut -d':' -f2)"
+		elif grep -E "$CUST" "$MOUNTFILE"; then
+			mountpointdir="$CUST"
+		else
+			faile "$CUST is neither a secure-profile or a recognized mounted location."
+		fi
+
+		#if [[ -f "$PWD/secdir.enc/${CUST}.links" ]]; then
+		#	infoe "Unlinking registered soft links"
+		#	dlinkall || {
+		#		warne "Could not unlink some directories:$(echo; cat "$PWD/secdir.enc/${CUST}.links")"
+		#		uconfirm "Unmount anyway?" || faile "Failed to unlink, aborting."
+		#	}
+		#fi
+
+		infoe "Closing $CUST"
+		_close_crypt "$mountpointdir" || faile "Could not close $CUST"
+		rmdir "$mountpointdir"
+		sed -r "/(^$CUST:|:$CUST$)/d" -i "$MOUNTFILE"
+		;;
+
+
+
+	*)
+		faile "Invalid action [$ACTION]. See --help for more information"
+		;;
+esac
+
+#% bundle files/config

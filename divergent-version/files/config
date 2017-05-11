@@ -1,0 +1,7 @@
+[Crypt]
+utility=encfs
+
+[Mount]
+
+load_in_cwd=no
+home=./
