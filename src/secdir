@@ -20,104 +20,97 @@
 
 ### secdir Usage:help
 #
-#Manage, Mount and Unmount EncFS encrypted directory
+# Manage, Mount and Unmount EncFS encrypted directory
 #
-#$(basename $0) {list|init}
-#$(basename $0) {mount|unmount|open|close} DIRNAME [LINK ...]
+# $(basename $0) {list|init}
+# $(basename $0) {mount|unmount|open|close} DIRNAME [LINK ...]
 #
-#Uses a .enc directory in the current working directory to store the encrypted files.
+# Uses a .enc directory in the current working directory to store the encrypted files.
 #
-#The secure directory is mounted in the current working directory.
+# The secure directory is mounted in the current working directory.
 #
-#OPTIONS
+# OPTIONS
 #
-#list
+# list
 #	list secure directories configured at current working directory
 #
-#init
+# init
 #	set current working directory up as a location for secure directories
 #
-#mount
-#open
+# mount
+# open
 #	mount the secure directory. If it does not exist, offers to create it.
 #
-#unmount
-#close
+# unmount
+# close
 #	unmount a mounted secure directory.
 ###/doc
 
-#%include bashout askuser autohelp abspath
+#%include bashout.sh askuser.sh autohelp.sh abspath.sh
 
-set -u
+set -euo pipefail
 
-function linkall {
-	while [[ -n "$@" ]]; do
-		local TGT=$(abspath "$1") ; shift
-		ln -s "$TGT" "$OPEDIR" && echo "$TGT" >> "$PWD/.enc/${CUST}.links"
-	done
+SECSTORE="$(abspath secdir.enc)"
+
+open_dir() {
+	infoe "Opening $targetname"
+	mkdir -p "$mountpoint"
+	encfs "$secure_store" "$mountpoint"
 }
 
-function delinkall {
-	if [[ ! -f "$PWD/.enc/${CUST}.links" ]]; then return 0; fi
-	cat "$PWD/.enc/${CUST}.links" | while read lfile; do
-		unlink "$lfile"
-		sed "/$(echo "$lfile"|sed 's|/|\\/|g')/d" -i "$PWD/.enc/${CUST}.links"
-	done
-	[[ $(wc -l "$PWD/.enc/${CUST}.links") -lt 1 ]] && rm "$PWD/.enc/${CUST}.links"
+close_dir() {
+	local targetname="$1"; shift
+	local secure_store="$SECSTORE/$targetname.d"
+	local mountpoint="$PWD/$targetname"
+
+	infoe "Closing $targetname"
+
+	# FIXME - search up the current path to look for targetname
+
+	fusermount -u "$mountpoint" && rmdir "$mountpoint"
 }
 
-if [[ ! -f /usr/bin/encfs ]]; then
-	encfs # try calling it anyway; some systems may hint which package needs installing
-	faile "Please install package 'encfs' "
-fi
+init_script() {
 
-if [[ -z "$@" ]]; then
-	faile "No arguments given."
-fi
+	if [[ ! -f /usr/bin/encfs ]]; then
+		encfs # try calling it anyway; some systems may hint which package needs installing
+		faile "Please install package 'encfs' "
+	fi
 
-ACTION="$1" ; shift
+	if [[ -z "$*" ]]; then
+		faile "No arguments given."
+	fi
 
-case "$ACTION" in
-list)
-	for x in $(ls .enc); do
-		infoe "$x"
-	done
-	exit 0
-	;;
-init)
-	mkdir -p "$PWD/.enc" && infoe "secdir has been set up for use in $PWD"
-	;;
-esac
+}
 
-if [[ ! -d "$PWD/.enc" ]]; then
-	faile "Current directory $PWD is not a valid secdir location."
-fi
+main() {
+	local ACTION="$1" ; shift
+	local targetname="$1" ; shift
 
+	case "$ACTION" in
+	list)
+		if [[ ! -d "$SECSTORE" ]]; then
+			faile "No secure profiles stored here."
+		fi
 
-if [[ -z "$@" ]]; then
-	faile "You must specify the name of a secure directory to load"
-fi
-
-CUST="$1" ; shift
-SECDIR="$PWD/.enc/$CUST"
-OPEDIR="$PWD/$CUST"
-
-case "$ACTION" in
+		for x in $(ls "$SECSTORE"/*.d); do
+			infoe "$x"
+		done
+		exit
+		;;
+	init)
+		mkdir -p "$SECSTORE" && infoe "secdir has been set up for use in $PWD"
+		;;
 	mount|open)
-		infoe "Opening $CUST"
-		mkdir -p "$OPEDIR"
-		encfs "$SECDIR" "$OPEDIR"
-		linkall $*
+		open_dir "$targetname"
 		;;
 	unmount|close)
-		infoe "Closing $CUST"
-		if delinkall ; then
-			fusermount -u "$OPEDIR" && rmdir "$OPEDIR"
-		else
-			faile 3 "Could not unlink some directories:\n$( cat "$PWD/.enc/${CUST}.links")"
-		fi
+		close_dir "$targetname"
 		;;
 	*)
 		faile "Invalid action $ARG. Use 'mount' or 'unmount' followed by the directory name."
 		;;
-esac
+	esac
+}
+
+notest main "$@"
