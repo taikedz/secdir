@@ -2,28 +2,13 @@
 
 # Script to mount / unmount singular secure diredctories
 
-# Released under BSD license:
-# Copyright (c) 2016 Tai Kedzierski.
-# All rights reserved.
-#
-# Redistribution and use in source and binary forms are permitted
-# provided that the above copyright notice and this paragraph are
-# duplicated in all such forms and that any documentation,
-# advertising materials, and other materials related to such
-# distribution and use acknowledge that the software was developed
-# by Tai Kedzierski. The name of Tai Kedzierski
-# may not be used to endorse or promote products derived
-# from this software without specific prior written permission.
-# THIS SOFTWARE IS PROVIDED ``AS IS'' AND WITHOUT ANY EXPRESS OR
-# IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED
-# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
-### secdir Usage:help
+### Secure Directories Usage:help
 #
 # Manage, Mount and Unmount EncFS encrypted directory
 #
-# $(basename $0) {list|init}
-# $(basename $0) {mount|unmount|open|close} DIRNAME [LINK ...]
+# secdir {list|init}
+# secdir {mount|unmount|open|close} DIRNAME [LINK ...]
 #
 # Uses a .enc directory in the current working directory to store the encrypted files.
 #
@@ -37,45 +22,114 @@
 # init
 #	set current working directory up as a location for secure directories
 #
-# mount
 # open
 #	mount the secure directory. If it does not exist, offers to create it.
 #
-# unmount
 # close
 #	unmount a mounted secure directory.
 #
+# CONFIGURATION
+# -------------
+#
+# You can edit the configuration script in secdir.enc/config.sh
+#
+# The following variables control secdir's behaviour
+#
+# SEC_LOADLOCALLY
+# 	Default: true
+#
+# 	If set to false, prevents secdir from mounting the plaintext data in the local directory.
+#
+# 	This should be set to false when storing the secure data on a network share or in a DropBox/Skydrive/etc
+#
+# SEC_MOUNTROOT
+# 	Default: current working directory
+#
+# 	The location at which to mount secure directories.
+#
+# 	Useful in conjunction with SEC_LOADLOCALLY to specify a safe place to mount plaintext data.
+#
+# AUTHOR
+# ------
+#
+# Copyright (c) 2016-2017 Tai Kedzierski.
+# Provided under the Gnu General Public License v3
+#
 ###/doc
 
-#%include bashout.sh askuser.sh autohelp.sh abspath.sh
+#%include bashout.sh colours.sh version.sh
+
+#%include askuser.sh autohelp.sh abspath.sh getbin.sh
 
 set -euo pipefail
 
-SECSTORE="$(abspath secdir.enc)"
+# Whether we can mount here according to prefs
+# set as reminder to prevent loading in Dropbox etc
+can_mount_in() {
+	local location="$(abspath "$1")"; shift
+
+	if [[ "$SEC_LOADLOCALLY" != yes ]] && [[ "$location"  =~ "$PWD" ]]; then
+		return 1
+	fi
+
+	return 0
+}
 
 open_dir() {
+	: ${SEC_MOUNTROOT="$PWD"}
+
+	local targetname="${1:-}"; shift
+	[[ -n "$targetname" ]] || faile "No target provided"
+
+	local secure_store="$SECSTORE/$targetname.d"
+	local mountpoint="$SEC_MOUNTROOT/$targetname"
+
+	can_mount_in "$mountpoint" || faile "Cannot mount here. Set SEC_MOUNTROOT as a target path to mount to instead."
+
 	infoe "Opening $targetname"
+
 	mkdir -p "$mountpoint"
 	encfs "$secure_store" "$mountpoint"
 }
 
 close_dir() {
-	local targetname="$1"; shift
-	local secure_store="$SECSTORE/$targetname.d"
-	local mountpoint="$PWD/$targetname"
+	local targetname="${1:-}"; shift
+	[[ -n "$targetname" ]] || faile "No target provided"
 
-	infoe "Closing $targetname"
+	infoe "Closing $targetname ..."
 
-	# FIXME - search up the current path to look for targetname
+	local mountpoint="$(get_encfs_mountpoint "$targetname")"
 
-	fusermount -u "$mountpoint" && rmdir "$mountpoint"
+	[[ -n "$mountpoint" ]] || faile "No such mount"
+
+	fusermount -u "$mountpoint" && rmdir "$mountpoint" || faile "Could not unmount $mountpoint"
 }
 
-init_script() {
+get_encfs_mountpoint() {
+	local targetname="$1"; shift
 
-	if [[ ! -f /usr/bin/encfs ]]; then
+	# This is brittle due to detecting between 'on' and 'type'
+	# but we do this to ensure we catch the case where there are spaces in the path
+	mount | egrep ^encfs| grep -Po 'on .+? type ' | sed -r -e 's/^on //' -e 's/ type ?$//'
+}
+
+precheck() {
+
+	SECSTORE="$(abspath secdir.enc)"
+	SECCONF="${SECSTORE:-}/config.sh"
+
+	if [[ -f "$SECCONF" ]]; then
+		. "$SECCONF"
+	fi
+
+	if ! hasbin encfs; then
 		encfs # try calling it anyway; some systems may hint which package needs installing
-		faile "Please install package 'encfs' "
+		faile "Please install 'encfs' "
+	fi
+
+	if ! hasbin fusermount; then
+		fusermount
+		faile "FUSE filesystem utilities are not installed."
 	fi
 
 	if [[ -z "$*" ]]; then
@@ -84,28 +138,49 @@ init_script() {
 
 }
 
+listdirs() {
+	if [[ ! -d "$SECSTORE" ]]; then
+		faile "No secure profiles stored here."
+	fi
+
+	local items=($(ls -d "$SECSTORE"/*.d))
+	for item in "$items"; do
+		infoe "$item"
+	done
+}
+
+secdir_init() {
+	[[ ! -d "$SECSTORE" ]] || faile "Secure store is already set up."
+
+	mkdir "$SECSTORE" || faile "Cannot initialize a secure directory in $PWD"
+
+	echo -e "SEC_LOADLOCALLY=true\nSEC_MOUNTROOT=$PWD" > "$SECCONFIG"
+	
+	infoe "secdir has been set up for use in $PWD; configuration is in $SECCONF"
+	warne "If you wish to prevent mounting locally (if this secure directory is
+in a DropBox or on a share), set SEC_LOADLOCALLY to 'false' and specify
+SEC_MOUNTROOT as a destination path."
+}
+
 main() {
 	local ACTION="$1" ; shift
-	local targetname="$1" ; shift
+
+	local targetname=''
+	[[ -n "$*" ]] && { targetname="$1" ; shift; } || :
+
+	precheck "$@"
 
 	case "$ACTION" in
 	list)
-		if [[ ! -d "$SECSTORE" ]]; then
-			faile "No secure profiles stored here."
-		fi
-
-		for x in $(ls "$SECSTORE"/*.d); do
-			infoe "$x"
-		done
-		exit
+		list_dirs "$@"
 		;;
 	init)
-		mkdir -p "$SECSTORE" && infoe "secdir has been set up for use in $PWD"
+		secdir_init "$@"
 		;;
-	mount|open)
+	open)
 		open_dir "$targetname"
 		;;
-	unmount|close)
+	close)
 		close_dir "$targetname"
 		;;
 	*)
