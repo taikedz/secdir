@@ -59,7 +59,7 @@
 
 #%include bashout.sh colours.sh version.sh
 
-#%include askuser.sh autohelp.sh abspath.sh getbin.sh
+#%include notest.sh askuser.sh autohelp.sh abspath.sh getbin.sh
 
 set -euo pipefail
 
@@ -68,7 +68,7 @@ set -euo pipefail
 can_mount_in() {
 	local location="$(abspath "$1")"; shift
 
-	if [[ "$SEC_LOADLOCALLY" != yes ]] && [[ "$location"  =~ "$PWD" ]]; then
+	if [[ "$SEC_LOADLOCALLY" != true ]] && [[ "$location"  =~ "$PWD" ]]; then
 		return 1
 	fi
 
@@ -110,7 +110,7 @@ get_encfs_mountpoint() {
 
 	# This is brittle due to detecting between 'on' and 'type'
 	# but we do this to ensure we catch the case where there are spaces in the path
-	mount | egrep ^encfs| grep -Po 'on .+? type ' | sed -r -e 's/^on //' -e 's/ type ?$//'
+	mount | egrep ^encfs|grep "$targetname"| grep -Po 'on .+? type ' | sed -r -e 's/^on //' -e 's/ type ?$//'
 }
 
 precheck() {
@@ -132,13 +132,9 @@ precheck() {
 		faile "FUSE filesystem utilities are not installed."
 	fi
 
-	if [[ -z "$*" ]]; then
-		faile "No arguments given."
-	fi
-
 }
 
-listdirs() {
+list_dirs() {
 	if [[ ! -d "$SECSTORE" ]]; then
 		faile "No secure profiles stored here."
 	fi
@@ -154,7 +150,7 @@ secdir_init() {
 
 	mkdir "$SECSTORE" || faile "Cannot initialize a secure directory in $PWD"
 
-	echo -e "SEC_LOADLOCALLY=true\nSEC_MOUNTROOT=$PWD" > "$SECCONFIG"
+	echo -e "SEC_LOADLOCALLY=true\nSEC_MOUNTROOT=$PWD" > "$SECCONF"
 	
 	infoe "secdir has been set up for use in $PWD; configuration is in $SECCONF"
 	warne "If you wish to prevent mounting locally (if this secure directory is
