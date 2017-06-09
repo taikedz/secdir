@@ -150,12 +150,17 @@ secdir_init() {
 
 	mkdir "$SECSTORE" || faile "Cannot initialize a secure directory in $PWD"
 
-	echo -e "SEC_LOADLOCALLY=true\nSEC_MOUNTROOT=$PWD" > "$SECCONF"
+	local seclocal=true
+	local mtroot="$PWD"
+
+	uconfirm "Is $PWD in a network-shared location, or in a DropBox/Google Drive/etc location ?" && {
+		seclocal=false
+		mtroot="$(uask "Please specify a path to mount decrypted folders at")"
+	} || :
+
+	echo -e "SEC_LOADLOCALLY=$seclocal\nSEC_MOUNTROOT='$mrroot'" > "$SECCONF"
 	
 	infoe "secdir has been set up for use in $PWD; configuration is in $SECCONF"
-	warne "If you wish to prevent mounting locally (if this secure directory is
-in a DropBox or on a share), set SEC_LOADLOCALLY to 'false' and specify
-SEC_MOUNTROOT as a destination path."
 }
 
 main() {
