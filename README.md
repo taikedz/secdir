@@ -1,7 +1,5 @@
 # Secdir
 
-Currently under re-work to support the same features, and also provide a safe method of storing secured directories on network and cloud shares/syncs
-
 ## Installation
 
 	git clone https://github.com/taikedz/secdir

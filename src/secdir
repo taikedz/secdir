@@ -82,19 +82,21 @@ open_dir() {
 	[[ -n "$targetname" ]] || faile "No target provided"
 
 	local secure_store="$SECSTORE/$targetname.d"
-	local mountpoint="$SEC_MOUNTROOT/$targetname"
+	local mountpoint="$(abspath "$SEC_MOUNTROOT/$targetname")"
 
 	can_mount_in "$mountpoint" || faile "Cannot mount here. Set SEC_MOUNTROOT as a target path to mount to instead."
 
 	infoe "Opening $targetname"
 
 	mkdir -p "$mountpoint"
+	debuge encfs "$secure_store" "$mountpoint"
 	encfs "$secure_store" "$mountpoint"
 }
 
 close_dir() {
 	local targetname="${1:-}"; shift
 	[[ -n "$targetname" ]] || faile "No target provided"
+	targetname="${targetname%/}" # in case user used aut-completion on directory
 
 	infoe "Closing $targetname ..."
 
@@ -140,25 +142,36 @@ list_dirs() {
 	fi
 
 	local items=($(ls -d "$SECSTORE"/*.d))
-	for item in "$items"; do
-		infoe "$item"
+	for item in "${items[@]}"; do
+		local dname="$(basename "$item")"
+		infoe "${dname%.d}"
 	done
 }
 
-secdir_init() {
-	[[ ! -d "$SECSTORE" ]] || faile "Secure store is already set up."
-
-	mkdir "$SECSTORE" || faile "Cannot initialize a secure directory in $PWD"
-
+setup_config() {
 	local seclocal=true
-	local mtroot="$PWD"
+	local mtroot="./"
 
 	uconfirm "Is $PWD in a network-shared location, or in a DropBox/Google Drive/etc location ?" && {
 		seclocal=false
 		mtroot="$(uask "Please specify a path to mount decrypted folders at")"
 	} || :
 
-	echo -e "SEC_LOADLOCALLY=$seclocal\nSEC_MOUNTROOT='$mrroot'" > "$SECCONF"
+	echo -e "SEC_LOADLOCALLY=$seclocal\nSEC_MOUNTROOT='$mtroot'" > "$SECCONF"
+}
+
+secdir_init() {
+	debuge "Checking $SECSTORE"
+	[[ ! -d "$SECSTORE" ]] && { mkdir "$SECSTORE" || faile "Cannot initialize a secure directory in $PWD" ; } || :
+
+	debuge "Checking $SECCONF"
+	[[ ! -f "$SECCONF" ]] && setup_config || faile "Secure store is already set up."
+
+	for store in secdir.enc/* ; do
+		[[ -f "$store" ]] && continue || :
+
+		mv "$store" "$store.d"
+	done
 	
 	infoe "secdir has been set up for use in $PWD; configuration is in $SECCONF"
 }

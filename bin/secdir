@@ -177,8 +177,8 @@ BBVERSION_MINOR=2
 BBVERSION_POINT=0
 BBVERSION_FLAG=release
 BBVERSION_PROGRAM=secdir
-BBVERSION_BUILDDATE=2017-06-09
-BBVERSION_BUILD=8
+BBVERSION_BUILDDATE=2017-06-12
+BBVERSION_BUILD=20
 
 function bbns_version_infoe {
 	type infoe 2>&1|if grep 'not found' -q; then
@@ -535,19 +535,21 @@ open_dir() {
 	[[ -n "$targetname" ]] || faile "No target provided"
 
 	local secure_store="$SECSTORE/$targetname.d"
-	local mountpoint="$SEC_MOUNTROOT/$targetname"
+	local mountpoint="$(abspath "$SEC_MOUNTROOT/$targetname")"
 
 	can_mount_in "$mountpoint" || faile "Cannot mount here. Set SEC_MOUNTROOT as a target path to mount to instead."
 
 	infoe "Opening $targetname"
 
 	mkdir -p "$mountpoint"
+	debuge encfs "$secure_store" "$mountpoint"
 	encfs "$secure_store" "$mountpoint"
 }
 
 close_dir() {
 	local targetname="${1:-}"; shift
 	[[ -n "$targetname" ]] || faile "No target provided"
+	targetname="${targetname%/}" # in case user used aut-completion on directory
 
 	infoe "Closing $targetname ..."
 
@@ -593,22 +595,38 @@ list_dirs() {
 	fi
 
 	local items=($(ls -d "$SECSTORE"/*.d))
-	for item in "$items"; do
-		infoe "$item"
+	for item in "${items[@]}"; do
+		local dname="$(basename "$item")"
+		infoe "${dname%.d}"
 	done
 }
 
+setup_config() {
+	local seclocal=true
+	local mtroot="./"
+
+	uconfirm "Is $PWD in a network-shared location, or in a DropBox/Google Drive/etc location ?" && {
+		seclocal=false
+		mtroot="$(uask "Please specify a path to mount decrypted folders at")"
+	} || :
+
+	echo -e "SEC_LOADLOCALLY=$seclocal\nSEC_MOUNTROOT='$mtroot'" > "$SECCONF"
+}
+
 secdir_init() {
-	[[ ! -d "$SECSTORE" ]] || faile "Secure store is already set up."
+	debuge "Checking $SECSTORE"
+	[[ ! -d "$SECSTORE" ]] && { mkdir "$SECSTORE" || faile "Cannot initialize a secure directory in $PWD" ; } || :
 
-	mkdir "$SECSTORE" || faile "Cannot initialize a secure directory in $PWD"
+	debuge "Checking $SECCONF"
+	[[ ! -f "$SECCONF" ]] && setup_config || faile "Secure store is already set up."
 
-	echo -e "SEC_LOADLOCALLY=true\nSEC_MOUNTROOT=$PWD" > "$SECCONF"
+	for store in secdir.enc/* ; do
+		[[ -f "$store" ]] && continue || :
+
+		mv "$store" "$store.d"
+	done
 	
 	infoe "secdir has been set up for use in $PWD; configuration is in $SECCONF"
-	warne "If you wish to prevent mounting locally (if this secure directory is
-in a DropBox or on a share), set SEC_LOADLOCALLY to 'false' and specify
-SEC_MOUNTROOT as a destination path."
 }
 
 main() {
