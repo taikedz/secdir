@@ -16,11 +16,12 @@
 #
 # OPTIONS
 #
-# list
-#	list secure directories configured at current working directory
-#
 # init
 #	set current working directory up as a location for secure directories
+#	(can also convert old secdir folders to the new format)
+#
+# list
+#	list secure directories configured at current working directory
 #
 # open
 #	mount the secure directory. If it does not exist, offers to create it.
@@ -177,8 +178,8 @@ BBVERSION_MINOR=2
 BBVERSION_POINT=0
 BBVERSION_FLAG=release
 BBVERSION_PROGRAM=secdir
-BBVERSION_BUILDDATE=2017-06-12
-BBVERSION_BUILD=20
+BBVERSION_BUILDDATE=2017-06-27
+BBVERSION_BUILD=27
 
 function bbns_version_infoe {
 	type infoe 2>&1|if grep 'not found' -q; then
@@ -257,6 +258,7 @@ function notest {
 yespat='^(yes|YES|y|Y)$'
 numpat='^[0-9]+$'
 rangepat='[0-9]+,[0-9]+'
+listpat='^[0-9 ]+$'
 blankpat='^ *$'
 
 ### uconfirm Usage:bbuild
@@ -319,14 +321,20 @@ function uchoose_multi {
 	debuge "CHOICES: $choices"
 
 	infoe "$mesg:" 
-	echo -e "$choices"|egrep '^' -n| sed 's/:/: /' 1>&2
+	local choicelist="$(echo -e "$choices"|egrep '^' -n| sed 's/:/: /')"
+	echo "$choicelist" 1>&2
 	
 	local sel=$(uask "Choice")
 	if [[ "$sel" =~ $blankpat ]]; then
 		return 1
+
 	elif [[ "$sel" =~ $numpat ]] || [[ "$sel" =~ $rangepat ]]; then
 		debuge "Number choice [$sel]"
 		echo -e "$choices" | sed -n "$sel p"
+	
+	elif [[ "$sel" =~ $listpat ]]; then
+		echo "$choicelist" | egrep "^${sel// /|}:" | sed -r 's/^[0-9]+: //'
+
 	else
 		debuge "Pattern choice [$sel]"
 		echo -e "$choices"  |egrep "$(echo "$sel"|tr " " '|')"
@@ -541,7 +549,7 @@ open_dir() {
 
 	infoe "Opening $targetname"
 
-	mkdir -p "$mountpoint"
+	mkdir "$mountpoint" || faile "$mountpoint already exists - refusing to overwrite it."
 	debuge encfs "$secure_store" "$mountpoint"
 	encfs "$secure_store" "$mountpoint"
 }
@@ -630,6 +638,11 @@ secdir_init() {
 }
 
 main() {
+	[[ -n "$*" ]] || {
+		warne "No arguments supplied. Try 'secdir --help' for more information."
+		exit 1
+	}
+
 	local ACTION="$1" ; shift
 
 	local targetname=''
