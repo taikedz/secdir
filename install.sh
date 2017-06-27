@@ -19,4 +19,6 @@ if [[ ! -f /usr/bin/encfs ]]; then
 	fi
 fi
 
-cp "$sdir"/bin/secdir "$binsd"
+cp "$sdir"/bin/secdir "$binsd" || exit 1
+
+echo "Install successful"
