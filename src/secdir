@@ -16,11 +16,12 @@
 #
 # OPTIONS
 #
-# list
-#	list secure directories configured at current working directory
-#
 # init
 #	set current working directory up as a location for secure directories
+#	(can also convert old secdir folders to the new format)
+#
+# list
+#	list secure directories configured at current working directory
 #
 # open
 #	mount the secure directory. If it does not exist, offers to create it.
@@ -88,7 +89,7 @@ open_dir() {
 
 	infoe "Opening $targetname"
 
-	mkdir -p "$mountpoint"
+	mkdir "$mountpoint" || faile "$mountpoint already exists - refusing to overwrite it."
 	debuge encfs "$secure_store" "$mountpoint"
 	encfs "$secure_store" "$mountpoint"
 }
@@ -177,6 +178,11 @@ secdir_init() {
 }
 
 main() {
+	[[ -n "$*" ]] || {
+		warne "No arguments supplied. Try 'secdir --help' for more information."
+		exit 1
+	}
+
 	local ACTION="$1" ; shift
 
 	local targetname=''
