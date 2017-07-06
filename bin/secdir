@@ -176,10 +176,10 @@ export CDEF="[0m"
 BBVERSION_MAJOR=0
 BBVERSION_MINOR=2
 BBVERSION_POINT=0
-BBVERSION_FLAG=release
+BBVERSION_FLAG=dev
 BBVERSION_PROGRAM=secdir
-BBVERSION_BUILDDATE=2017-06-27
-BBVERSION_BUILD=27
+BBVERSION_BUILDDATE=2017-07-06
+BBVERSION_BUILD=28
 
 function bbns_version_infoe {
 	type infoe 2>&1|if grep 'not found' -q; then
@@ -536,6 +536,22 @@ can_mount_in() {
 	return 0
 }
 
+create_mount_dir() {
+	local mountpoint="$1"; shift
+
+	# Try to remove the directory
+	# an empty dir can still be present after a system reboot/crash
+	#
+	# this will always fail if the directory is not empty
+	# we use the full path to avoid triggering an alias by mistake
+	[[ -d "$mountpoint" ]] \
+	 && [[ "$(/bin/ls -A "$mountpoint"|wc -l)" -gt 0 ]] \
+	 && /bin/rmdir "$mountpoint" 2>/dev/null \
+	 || faile "$mountpoint already exists and is not empty"
+	
+	mkdir "$mountpoint"
+}
+
 open_dir() {
 	: ${SEC_MOUNTROOT="$PWD"}
 
@@ -549,7 +565,7 @@ open_dir() {
 
 	infoe "Opening $targetname"
 
-	mkdir "$mountpoint" || faile "$mountpoint already exists - refusing to overwrite it."
+	create_mount_dir "$mountpoint"
 	debuge encfs "$secure_store" "$mountpoint"
 	encfs "$secure_store" "$mountpoint"
 }
