@@ -84,10 +84,11 @@ create_mount_dir() {
 	#
 	# this will always fail if the directory is not empty
 	# we use the full path to avoid triggering an alias by mistake
-	[[ -d "$mountpoint" ]] \
-	 && [[ "$(/bin/ls -A "$mountpoint"|wc -l)" -gt 0 ]] \
-	 && /bin/rmdir "$mountpoint" 2>/dev/null \
-	 || faile "$mountpoint already exists and is not empty"
+	if [[ -d "$mountpoint" ]] ; then
+		 [[ "$(/bin/ls -A "$mountpoint"|wc -l)" -gt 0 ]] \
+		 && /bin/rmdir "$mountpoint" 2>/dev/null \
+		 || faile "$mountpoint already exists and is not empty"
+	 fi
 	
 	mkdir "$mountpoint"
 }

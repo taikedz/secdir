@@ -178,8 +178,8 @@ BBVERSION_MINOR=2
 BBVERSION_POINT=0
 BBVERSION_FLAG=dev
 BBVERSION_PROGRAM=secdir
-BBVERSION_BUILDDATE=2017-07-06
-BBVERSION_BUILD=28
+BBVERSION_BUILDDATE=2017-09-20
+BBVERSION_BUILD=31
 
 function bbns_version_infoe {
 	type infoe 2>&1|if grep 'not found' -q; then
@@ -544,10 +544,11 @@ create_mount_dir() {
 	#
 	# this will always fail if the directory is not empty
 	# we use the full path to avoid triggering an alias by mistake
-	[[ -d "$mountpoint" ]] \
-	 && [[ "$(/bin/ls -A "$mountpoint"|wc -l)" -gt 0 ]] \
-	 && /bin/rmdir "$mountpoint" 2>/dev/null \
-	 || faile "$mountpoint already exists and is not empty"
+	if [[ -d "$mountpoint" ]] ; then
+		 [[ "$(/bin/ls -A "$mountpoint"|wc -l)" -gt 0 ]] \
+		 && /bin/rmdir "$mountpoint" 2>/dev/null \
+		 || faile "$mountpoint already exists and is not empty"
+	 fi
 	
 	mkdir "$mountpoint"
 }
